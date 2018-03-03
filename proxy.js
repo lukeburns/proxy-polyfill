@@ -16,11 +16,10 @@
 
 'use strict';
 
-
 (function(scope) {
-  // if (scope['Proxy']) {
-  //   return;
-  // }
+  if (scope['Proxy']) {
+    return;
+  }
   let lastRevokeFn = null;
 
   /**
