@@ -18,9 +18,9 @@
 
 
 (function(scope) {
-  if (scope['Proxy']) {
-    return;
-  }
+  // if (scope['Proxy']) {
+  //   return;
+  // }
   let lastRevokeFn = null;
 
   /**
@@ -30,6 +30,15 @@
   function isObject(o) {
     return o ? (typeof o === 'object' || typeof o === 'function') : false;
   }
+  
+  scope.Reflect = {
+    get: function (target, key) {
+      return target[key]
+    },
+    set: function (target, key, value) {
+      return target[key] = value
+    }
+  }
 
   /**
    * @constructor
@@ -38,7 +47,7 @@
    */
   scope.Proxy = function(target, handler) {
     if (!isObject(target) || !isObject(handler)) {
-      throw new TypeError('Cannot create proxy with a non-object as target or handler');
+      if (!scope.Proxy.quiet) console.warn('Cannot create proxy with a non-object as target or handler');
     }
 
     // Construct revoke function, and set lastRevokeFn so that Proxy.revocable can steal it.
@@ -47,7 +56,7 @@
     let throwRevoked = function() {};
     lastRevokeFn = function() {
       throwRevoked = function(trap) {
-        throw new TypeError(`Cannot perform '${trap}' on a proxy that has been revoked`);
+        if (!scope.Proxy.quiet) console.warn(`Cannot perform '${trap}' on a proxy that has been revoked`);
       };
     };
 
@@ -57,7 +66,7 @@
     handler = {'get': null, 'set': null, 'apply': null, 'construct': null};
     for (let k in unsafeHandler) {
       if (!(k in handler)) {
-        throw new TypeError(`Proxy polyfill does not support trap '${k}'`);
+        if (!scope.Proxy.quiet) console.warn(`Proxy polyfill does not support trap '${k}'`);
       }
       handler[k] = unsafeHandler[k];
     }
@@ -104,13 +113,30 @@
     // change after creation.
     const getter = handler.get ? function(prop) {
       throwRevoked('get');
-      return handler.get(this, prop, proxy);
+      if (this[prop] instanceof Array && !this[prop].__patched) {
+        var arr = this[prop]
+        var keys = ["pop", "push", "shift", "unshift", "splice", "reverse", "sort", "copyWithin", "fill"]
+        
+        keys.forEach(function (key) {
+          var fn = Array.prototype[key]
+          arr[key] = function () {
+            var ret = fn.apply(arr, arguments)
+            proxy[prop] = Array.from(arr)
+            return ret
+          }
+        })
+        
+        arr.__patched = true
+      }
+      
+      var ret = handler.get(this, prop, proxy);
+      
+      return ret
     } : function(prop) {
       throwRevoked('get');
       return this[prop];
     };
     const setter = handler.set ? function(prop, value) {
-      throwRevoked('set');
       const status = handler.set(this, prop, value, proxy);
       if (!status) {
         // TODO(samthor): If the calling code is in strict mode, throw TypeError.
@@ -160,7 +186,7 @@
     }
 
     // The Proxy polyfill cannot handle adding new properties. Seal the target and proxy.
-    Object.seal(target);
+    // Object.seal(target);
     Object.seal(proxy);
 
     return proxy;  // nb. if isMethod is true, proxy != this
